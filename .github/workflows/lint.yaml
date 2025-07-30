@@ -1,78 +1,165 @@
 name: Lint
-
 on:
   push:
     branches:
       - main
-  pull_request:
-    branches:
-      - main
 
 jobs:
-  typos-check:
-    name: Spell Check with Typos
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout Actions Repository
-        uses: actions/checkout@v4
-      - name: Check spelling with custom config file
-        uses: crate-ci/typos@v1.16.10
-        with:
-          config: ./typos.toml
-
   clippy:
-    runs-on: ubuntu-latest
     permissions:
       pull-requests: write
+    runs-on: ubuntu-latest
     steps:
+      - name: Start Energy Measurement
+        uses: green-coding-solutions/eco-ci-energy-estimation@862050e4f01f65b1436e5eca18ba4bd85562f0de
+        with:
+          json-output: true
+          task: start-measurement
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@nightly
         with:
           components: clippy
       - run: mkdir -p ./dist/tauri
+      - id: measurement-4
+        name: Record Measurement After Step
+        uses: green-coding-solutions/eco-ci-energy-estimation@862050e4f01f65b1436e5eca18ba4bd85562f0de
+        with:
+          json-output: true
+          label: Step
+          task: get-measurement
       - uses: giraffate/clippy-action@v1
         with:
-          reporter: 'github-pr-review'
-          github_token: ${{ secrets.GITHUB_TOKEN }}
           clippy_flags: -- -Dwarning
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          reporter: github-pr-review
           workdir: ./src-tauri
-
-  rustfmt:
+      - id: display-measurement
+        name: Display Energy Results
+        uses: green-coding-solutions/eco-ci-energy-estimation@862050e4f01f65b1436e5eca18ba4bd85562f0de
+        with:
+          json-output: true
+          task: display-results
+      - name: Save Total Energy Consumption Data
+        run: echo '${{ steps.final-measurement.outputs.data-total-json }}' > total_energy_consumption.json
+      - name: Upload Energy Consumption Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: total-energy-consumption
+          path: total_energy_consumption.json
+  eslint:
     runs-on: ubuntu-latest
-    permissions:
-      pull-requests: write
-      checks: write
     steps:
+      - name: Start Energy Measurement
+        uses: green-coding-solutions/eco-ci-energy-estimation@862050e4f01f65b1436e5eca18ba4bd85562f0de
+        with:
+          json-output: true
+          task: start-measurement
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v2
+        with:
+          version: 8.6.0
+      - uses: actions/setup-node@v3
+        with:
+          cache: pnpm
+          node-version: 18
+      - name: Install packages
+        run: pnpm install --no-frozen-lockfile
+      - id: measurement-5
+        name: Record Measurement After Install packages
+        uses: green-coding-solutions/eco-ci-energy-estimation@862050e4f01f65b1436e5eca18ba4bd85562f0de
+        with:
+          json-output: true
+          label: Install packages
+          task: get-measurement
+      - name: Run type check
+        run: pnpm tsc
+      - id: measurement-7
+        name: Record Measurement After Run type check
+        uses: green-coding-solutions/eco-ci-energy-estimation@862050e4f01f65b1436e5eca18ba4bd85562f0de
+        with:
+          json-output: true
+          label: Run type check
+          task: get-measurement
+      - name: Run eslint
+        run: pnpm lint
+      - id: measurement-9
+        name: Record Measurement After Run eslint
+        uses: green-coding-solutions/eco-ci-energy-estimation@862050e4f01f65b1436e5eca18ba4bd85562f0de
+        with:
+          json-output: true
+          label: Run eslint
+          task: get-measurement
+      - id: display-measurement
+        name: Display Energy Results
+        uses: green-coding-solutions/eco-ci-energy-estimation@862050e4f01f65b1436e5eca18ba4bd85562f0de
+        with:
+          json-output: true
+          task: display-results
+      - name: Save Total Energy Consumption Data
+        run: echo '${{ steps.final-measurement.outputs.data-total-json }}' > total_energy_consumption.json
+      - name: Upload Energy Consumption Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: total-energy-consumption
+          path: total_energy_consumption.json
+  rustfmt:
+    permissions:
+      checks: write
+      pull-requests: write
+    runs-on: ubuntu-latest
+    steps:
+      - name: Start Energy Measurement
+        uses: green-coding-solutions/eco-ci-energy-estimation@862050e4f01f65b1436e5eca18ba4bd85562f0de
+        with:
+          json-output: true
+          task: start-measurement
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@nightly
         with:
           components: rustfmt
       - uses: LoliGothick/rustfmt-check@master
         with:
-          token: ${{ secrets.GITHUB_TOKEN }}
           flags: --all
+          token: ${{ secrets.GITHUB_TOKEN }}
           working-directory: ./src-tauri
-
-  eslint:
+      - id: display-measurement
+        name: Display Energy Results
+        uses: green-coding-solutions/eco-ci-energy-estimation@862050e4f01f65b1436e5eca18ba4bd85562f0de
+        with:
+          json-output: true
+          task: display-results
+      - name: Save Total Energy Consumption Data
+        run: echo '${{ steps.final-measurement.outputs.data-total-json }}' > total_energy_consumption.json
+      - name: Upload Energy Consumption Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: total-energy-consumption
+          path: total_energy_consumption.json
+  typos-check:
+    name: Spell Check with Typos
     runs-on: ubuntu-latest
-
     steps:
-      - uses: actions/checkout@v4
-
-      - uses: pnpm/action-setup@v2
+      - name: Start Energy Measurement
+        uses: green-coding-solutions/eco-ci-energy-estimation@862050e4f01f65b1436e5eca18ba4bd85562f0de
         with:
-          version: 8.6.0
-
-      - uses: actions/setup-node@v3
+          json-output: true
+          task: start-measurement
+      - name: Checkout Actions Repository
+        uses: actions/checkout@v4
+      - name: Check spelling with custom config file
+        uses: crate-ci/typos@v1.16.10
         with:
-          node-version: 18
-          cache: 'pnpm'
-
-      - name: Install packages
-        run: pnpm install --no-frozen-lockfile
-
-      - name: Run type check
-        run: pnpm tsc
-
-      - name: Run eslint
-        run: pnpm lint
+          config: ./typos.toml
+      - id: display-measurement
+        name: Display Energy Results
+        uses: green-coding-solutions/eco-ci-energy-estimation@862050e4f01f65b1436e5eca18ba4bd85562f0de
+        with:
+          json-output: true
+          task: display-results
+      - name: Save Total Energy Consumption Data
+        run: echo '${{ steps.final-measurement.outputs.data-total-json }}' > total_energy_consumption.json
+      - name: Upload Energy Consumption Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: total-energy-consumption
+          path: total_energy_consumption.json

@@ -1,43 +1,352 @@
 name: Release
-
 on:
   push:
-    tags: [ v\d+\.\d+\.\d+ ]
+    branches:
+      - main
 
 jobs:
-  create-release:
+  build-browser-extension:
+    needs: create-release
     permissions:
       contents: write
-    runs-on: ubuntu-20.04
-    outputs:
-      release_id: ${{ steps.create-release.outputs.id }}
-      release_upload_url: ${{ steps.create-release.outputs.upload_url }}
-      release_body: "${{ steps.tag.outputs.message }}"
-
+      packages: write
+    runs-on: ubuntu-22.04
     steps:
-      - uses: actions/checkout@v4
-
-      - name: Get version
-        id: get_version
-        uses: battila7/get-version-action@v2
-
-      - name: Get tag message
-        id: tag
-        run: |
-          git fetch --depth=1 origin +refs/tags/*:refs/tags/*
-          echo "message<<EOF" >> $GITHUB_OUTPUT
-          echo "$(git tag -l --format='%(contents)' ${{ steps.get_version.outputs.version }})" >> $GITHUB_OUTPUT
-          echo "EOF" >> $GITHUB_OUTPUT
-
-      - name: Create Release
-        id: create-release
-        uses: ncipollo/release-action@v1
+      - name: Start Energy Measurement
+        uses: green-coding-solutions/eco-ci-energy-estimation@862050e4f01f65b1436e5eca18ba4bd85562f0de
         with:
-          draft: true
-          name: ${{ steps.get_version.outputs.version }}
-          tag: ${{ steps.get_version.outputs.version }}
-          body: "${{ steps.tag.outputs.message }}"
+          json-output: true
+          task: start-measurement
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v2
+        with:
+          version: 8.6.0
+      - name: setup node
+        uses: actions/setup-node@v3
+        with:
+          cache: pnpm
+          node-version: 18
+      - id: get_version
+        name: Get version
+        uses: battila7/get-version-action@v2
+      - name: Install dependencies
+        run: pnpm install --no-frozen-lockfile
+      - id: measurement-6
+        name: Record Measurement After Install dependencies
+        uses: green-coding-solutions/eco-ci-energy-estimation@862050e4f01f65b1436e5eca18ba4bd85562f0de
+        with:
+          json-output: true
+          label: Install dependencies
+          task: get-measurement
+      - env:
+          VERSION: ${{ steps.get_version.outputs.version-without-v }}
+        name: Build browser extension
+        run: make build-browser-extension
+      - id: measurement-8
+        name: Record Measurement After Build browser extension
+        uses: green-coding-solutions/eco-ci-energy-estimation@862050e4f01f65b1436e5eca18ba4bd85562f0de
+        with:
+          json-output: true
+          label: Build browser extension
+          task: get-measurement
+      - env:
+          VERSION: ${{ steps.get_version.outputs.version-without-v }}
+        name: Build userscript
+        run: make build-userscript
+      - id: measurement-10
+        name: Record Measurement After Build userscript
+        uses: green-coding-solutions/eco-ci-energy-estimation@862050e4f01f65b1436e5eca18ba4bd85562f0de
+        with:
+          json-output: true
+          label: Build userscript
+          task: get-measurement
+      - name: Package plugin and create userscript
+        run: 'mkdir release
 
+          mv dist/browser-extension/*.zip release/
+
+          mv dist/openai-translator.user.js release/openai-translator-${{ steps.get_version.outputs.version-without-v
+          }}.user.js
+
+          '
+      - id: measurement-12
+        name: Record Measurement After Package plugin and create userscript
+        uses: green-coding-solutions/eco-ci-energy-estimation@862050e4f01f65b1436e5eca18ba4bd85562f0de
+        with:
+          json-output: true
+          label: Package plugin and create userscript
+          task: get-measurement
+      - env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        id: upload-chromium-release-asset
+        name: Upload Chromium extensions to release
+        uses: actions/upload-release-asset@v1
+        with:
+          asset_content_type: application/zip
+          asset_name: openai-translator-chromium-extension-${{ steps.get_version.outputs.version-without-v
+            }}.zip
+          asset_path: release/chromium.zip
+          upload_url: ${{ needs.create-release.outputs.release_upload_url }}
+      - env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        id: upload-firefox-release-asset
+        name: Upload Firefox extensions to release
+        uses: actions/upload-release-asset@v1
+        with:
+          asset_content_type: application/zip
+          asset_name: openai-translator-firefox-extension-${{ steps.get_version.outputs.version-without-v
+            }}.xpi
+          asset_path: release/firefox.zip
+          upload_url: ${{ needs.create-release.outputs.release_upload_url }}
+      - env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        id: upload-userscript-asset
+        name: Upload userscript to release
+        uses: actions/upload-release-asset@v1
+        with:
+          asset_content_type: application/javascript
+          asset_name: openai-translator-${{ steps.get_version.outputs.version-without-v
+            }}.user.js
+          asset_path: release/openai-translator-${{ steps.get_version.outputs.version-without-v
+            }}.user.js
+          upload_url: ${{ needs.create-release.outputs.release_upload_url }}
+      - id: display-measurement
+        name: Display Energy Results
+        uses: green-coding-solutions/eco-ci-energy-estimation@862050e4f01f65b1436e5eca18ba4bd85562f0de
+        with:
+          json-output: true
+          task: display-results
+      - name: Save Total Energy Consumption Data
+        run: echo '${{ steps.final-measurement.outputs.data-total-json }}' > total_energy_consumption.json
+      - name: Upload Energy Consumption Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: total-energy-consumption
+          path: total_energy_consumption.json
+  build-clip-extension:
+    needs: create-release
+    permissions:
+      contents: write
+      packages: write
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Start Energy Measurement
+        uses: green-coding-solutions/eco-ci-energy-estimation@862050e4f01f65b1436e5eca18ba4bd85562f0de
+        with:
+          json-output: true
+          task: start-measurement
+      - uses: actions/checkout@v4
+      - id: get_version
+        name: Get version
+        uses: battila7/get-version-action@v2
+      - name: Build PopClip extension
+        run: make build-popclip-extension
+      - id: measurement-4
+        name: Record Measurement After Build PopClip extension
+        uses: green-coding-solutions/eco-ci-energy-estimation@862050e4f01f65b1436e5eca18ba4bd85562f0de
+        with:
+          json-output: true
+          label: Build PopClip extension
+          task: get-measurement
+      - env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        name: Upload PopClip extension to release
+        uses: actions/upload-release-asset@v1
+        with:
+          asset_content_type: application/zip
+          asset_name: openai-translator.popclipextz
+          asset_path: dist/openai-translator.popclipextz
+          upload_url: ${{ needs.create-release.outputs.release_upload_url }}
+      - name: Build SnipDo extension
+        run: make build-snipdo-extension
+      - id: measurement-7
+        name: Record Measurement After Build SnipDo extension
+        uses: green-coding-solutions/eco-ci-energy-estimation@862050e4f01f65b1436e5eca18ba4bd85562f0de
+        with:
+          json-output: true
+          label: Build SnipDo extension
+          task: get-measurement
+      - env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        name: Upload SnipDo extension to release
+        uses: actions/upload-release-asset@v1
+        with:
+          asset_content_type: application/zip
+          asset_name: openai-translator.pbar
+          asset_path: dist/openai-translator.pbar
+          upload_url: ${{ needs.create-release.outputs.release_upload_url }}
+      - id: display-measurement
+        name: Display Energy Results
+        uses: green-coding-solutions/eco-ci-energy-estimation@862050e4f01f65b1436e5eca18ba4bd85562f0de
+        with:
+          json-output: true
+          task: display-results
+      - name: Save Total Energy Consumption Data
+        run: echo '${{ steps.final-measurement.outputs.data-total-json }}' > total_energy_consumption.json
+      - name: Upload Energy Consumption Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: total-energy-consumption
+          path: total_energy_consumption.json
+  build-tauri:
+    needs:
+      - create-release
+      - build-tauri-renderer
+    permissions:
+      contents: write
+      packages: write
+    runs-on: ${{ matrix.config.os }}
+    steps:
+      - name: Start Energy Measurement
+        uses: green-coding-solutions/eco-ci-energy-estimation@862050e4f01f65b1436e5eca18ba4bd85562f0de
+        with:
+          json-output: true
+          task: start-measurement
+      - uses: actions/checkout@v4
+      - id: get_version
+        name: Get version
+        uses: battila7/get-version-action@v2
+      - uses: pnpm/action-setup@v2
+        with:
+          version: 8.6.0
+      - name: Setup node
+        uses: actions/setup-node@v3
+        with:
+          cache: pnpm
+          node-version: 18
+      - name: Install frontend dependencies
+        run: pnpm install --no-frozen-lockfile
+      - id: measurement-6
+        name: Record Measurement After Install frontend dependencies
+        uses: green-coding-solutions/eco-ci-energy-estimation@862050e4f01f65b1436e5eca18ba4bd85562f0de
+        with:
+          json-output: true
+          label: Install frontend dependencies
+          task: get-measurement
+      - name: Install Rust nightly
+        uses: dtolnay/rust-toolchain@nightly
+        with:
+          targets: ${{ matrix.config.rust_target }}
+          toolchain: 1.78.0
+      - if: matrix.config.os == 'ubuntu-latest'
+        name: Install dependencies (ubuntu only)
+        run: 'sudo apt-get update
+
+          sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.1-dev libappindicator3-dev
+          librsvg2-dev patchelf libx11-dev libxdo-dev libxcb-shape0-dev libxcb-xfixes0-dev
+
+          sudo apt-get install -y libunwind-dev libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev
+          libgstreamer-plugins-bad1.0-dev gstreamer1.0-plugins-base gstreamer1.0-plugins-good
+          gstreamer1.0-plugins-bad gstreamer1.0-plugins-ugly gstreamer1.0-libav gstreamer1.0-tools
+          gstreamer1.0-x gstreamer1.0-alsa gstreamer1.0-gl gstreamer1.0-gtk3 gstreamer1.0-qt5
+          gstreamer1.0-pulseaudio
+
+          '
+      - id: measurement-9
+        name: Record Measurement After Install dependencies (ubuntu only)
+        uses: green-coding-solutions/eco-ci-energy-estimation@862050e4f01f65b1436e5eca18ba4bd85562f0de
+        with:
+          json-output: true
+          label: Install dependencies (ubuntu only)
+          task: get-measurement
+      - if: matrix.config.os == 'macos-latest'
+        name: Install dependencies (mac only)
+        run: 'rustup target add aarch64-apple-darwin
+
+          '
+      - id: measurement-11
+        name: Record Measurement After Install dependencies (mac only)
+        uses: green-coding-solutions/eco-ci-energy-estimation@862050e4f01f65b1436e5eca18ba4bd85562f0de
+        with:
+          json-output: true
+          label: Install dependencies (mac only)
+          task: get-measurement
+      - env:
+          VERSION: ${{ steps.get_version.outputs.version-without-v }}
+        name: Change Version
+        run: make change-version change-package-version
+      - id: measurement-13
+        name: Record Measurement After Change Version
+        uses: green-coding-solutions/eco-ci-energy-estimation@862050e4f01f65b1436e5eca18ba4bd85562f0de
+        with:
+          json-output: true
+          label: Change Version
+          task: get-measurement
+      - uses: actions/download-artifact@v3
+        with:
+          name: tauri-renderer
+          path: dist/tauri
+      - name: Install Cargo Tauri for info
+        run: cargo install tauri-cli --version "=2.0.0-beta.13" --locked
+      - id: measurement-16
+        name: Record Measurement After Install Cargo Tauri for info
+        uses: green-coding-solutions/eco-ci-energy-estimation@862050e4f01f65b1436e5eca18ba4bd85562f0de
+        with:
+          json-output: true
+          label: Install Cargo Tauri for info
+          task: get-measurement
+      - name: Tauri info
+        run: cargo tauri info
+      - id: measurement-18
+        name: Record Measurement After Tauri info
+        uses: green-coding-solutions/eco-ci-energy-estimation@862050e4f01f65b1436e5eca18ba4bd85562f0de
+        with:
+          json-output: true
+          label: Tauri info
+          task: get-measurement
+      - uses: oNaiPs/secrets-to-env-action@v1
+        with:
+          secrets: ${{ toJSON(secrets) }}
+      - env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        if: matrix.config.os != 'macos-latest' || matrix.config.arch != 'aarch64'
+        name: Build Tauri App
+        uses: tauri-apps/tauri-action@v0
+        with:
+          releaseBody: ${{ needs.create-release.outputs.release_body }}
+          releaseId: ${{ needs.create-release.outputs.release_id }}
+          tauriScript: cargo tauri
+          updaterJsonPreferNsis: true
+      - env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        if: matrix.config.os == 'macos-latest' && matrix.config.arch == 'aarch64'
+        name: Build Tauri App (macOS aarch64)
+        uses: tauri-apps/tauri-action@v0
+        with:
+          args: --target aarch64-apple-darwin
+          releaseBody: ${{ needs.create-release.outputs.release_body }}
+          releaseId: ${{ needs.create-release.outputs.release_id }}
+          tauriScript: cargo tauri
+          updaterJsonPreferNsis: true
+      - id: display-measurement
+        name: Display Energy Results
+        uses: green-coding-solutions/eco-ci-energy-estimation@862050e4f01f65b1436e5eca18ba4bd85562f0de
+        with:
+          json-output: true
+          task: display-results
+      - name: Save Total Energy Consumption Data
+        run: echo '${{ steps.final-measurement.outputs.data-total-json }}' > total_energy_consumption.json
+      - name: Upload Energy Consumption Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: total-energy-consumption
+          path: total_energy_consumption.json
+    strategy:
+      fail-fast: false
+      matrix:
+        config:
+          - arch: x86_64
+            os: ubuntu-latest
+            rust_target: x86_64-unknown-linux-gnu
+          - arch: x86_64
+            os: macos-13
+            rust_target: x86_64-apple-darwin
+          - arch: aarch64
+            os: macos-latest
+            rust_target: aarch64-apple-darwin
+          - arch: x86_64
+            os: windows-latest
+            rust_target: x86_64-pc-windows-msvc
   build-tauri-renderer:
     needs: create-release
     permissions:
@@ -45,284 +354,164 @@ jobs:
       packages: write
     runs-on: ubuntu-20.04
     steps:
+      - name: Start Energy Measurement
+        uses: green-coding-solutions/eco-ci-energy-estimation@862050e4f01f65b1436e5eca18ba4bd85562f0de
+        with:
+          json-output: true
+          task: start-measurement
       - uses: actions/checkout@v4
-
-      - name: Get version
-        id: get_version
+      - id: get_version
+        name: Get version
         uses: battila7/get-version-action@v2
-
       - uses: pnpm/action-setup@v2
         with:
           version: 8.6.0
-
       - name: setup node
         uses: actions/setup-node@v3
         with:
+          cache: pnpm
           node-version: 18
-          cache: 'pnpm'
-
       - name: install frontend dependencies
-        run: pnpm install --no-frozen-lockfile # change this to npm or pnpm depending on which one you use
-
-      - name: Change Version
-        env:
-          VERSION: "${{ steps.get_version.outputs.version-without-v }}"
+        run: pnpm install --no-frozen-lockfile
+      - id: measurement-6
+        name: Record Measurement After install frontend dependencies
+        uses: green-coding-solutions/eco-ci-energy-estimation@862050e4f01f65b1436e5eca18ba4bd85562f0de
+        with:
+          json-output: true
+          label: install frontend dependencies
+          task: get-measurement
+      - env:
+          VERSION: ${{ steps.get_version.outputs.version-without-v }}
+        name: Change Version
         run: make change-version change-package-version
-
+      - id: measurement-8
+        name: Record Measurement After Change Version
+        uses: green-coding-solutions/eco-ci-energy-estimation@862050e4f01f65b1436e5eca18ba4bd85562f0de
+        with:
+          json-output: true
+          label: Change Version
+          task: get-measurement
       - uses: oNaiPs/secrets-to-env-action@v1
         with:
           secrets: ${{ toJSON(secrets) }}
-
       - name: build tauri renderer
         run: pnpm build-tauri-renderer
-
+      - id: measurement-11
+        name: Record Measurement After build tauri renderer
+        uses: green-coding-solutions/eco-ci-energy-estimation@862050e4f01f65b1436e5eca18ba4bd85562f0de
+        with:
+          json-output: true
+          label: build tauri renderer
+          task: get-measurement
       - uses: actions/upload-artifact@v3
         with:
           name: tauri-renderer
           path: dist/tauri/
-
-  build-tauri:
-    needs: [create-release, build-tauri-renderer]
-    permissions:
-      contents: write
-      packages: write
-    strategy:
-      fail-fast: false
-      matrix:
-        config:
-          - os: ubuntu-latest
-            arch: x86_64
-            rust_target: x86_64-unknown-linux-gnu
-          - os: macos-13
-            arch: x86_64
-            rust_target: x86_64-apple-darwin
-          - os: macos-latest
-            arch: aarch64
-            rust_target: aarch64-apple-darwin
-          - os: windows-latest
-            arch: x86_64
-            rust_target: x86_64-pc-windows-msvc
-
-    runs-on: ${{ matrix.config.os }}
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Get version
-        id: get_version
-        uses: battila7/get-version-action@v2
-
-      - uses: pnpm/action-setup@v2
+      - id: display-measurement
+        name: Display Energy Results
+        uses: green-coding-solutions/eco-ci-energy-estimation@862050e4f01f65b1436e5eca18ba4bd85562f0de
         with:
-          version: 8.6.0
-
-      - name: Setup node
-        uses: actions/setup-node@v3
+          json-output: true
+          task: display-results
+      - name: Save Total Energy Consumption Data
+        run: echo '${{ steps.final-measurement.outputs.data-total-json }}' > total_energy_consumption.json
+      - name: Upload Energy Consumption Artifact
+        uses: actions/upload-artifact@v4
         with:
-          node-version: 18
-          cache: 'pnpm'
-
-      - name: Install frontend dependencies
-        run: pnpm install --no-frozen-lockfile # change this to npm or pnpm depending on which one you use
-
-      - name: Install Rust nightly
-        uses: dtolnay/rust-toolchain@nightly
-        with:
-          targets: ${{ matrix.config.rust_target }}
-          toolchain: '1.78.0'
-
-      - name: Install dependencies (ubuntu only)
-        if: matrix.config.os == 'ubuntu-latest'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf libx11-dev libxdo-dev libxcb-shape0-dev libxcb-xfixes0-dev
-          sudo apt-get install -y libunwind-dev libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev libgstreamer-plugins-bad1.0-dev gstreamer1.0-plugins-base gstreamer1.0-plugins-good gstreamer1.0-plugins-bad gstreamer1.0-plugins-ugly gstreamer1.0-libav gstreamer1.0-tools gstreamer1.0-x gstreamer1.0-alsa gstreamer1.0-gl gstreamer1.0-gtk3 gstreamer1.0-qt5 gstreamer1.0-pulseaudio
-
-      - name: Install dependencies (mac only)
-        if: matrix.config.os == 'macos-latest'
-        run: |
-          rustup target add aarch64-apple-darwin
-
-      - name: Change Version
-        env:
-          VERSION: "${{ steps.get_version.outputs.version-without-v }}"
-        run: make change-version change-package-version
-
-      - uses: actions/download-artifact@v3
-        with:
-          name: tauri-renderer
-          path: dist/tauri
-
-      - name: Install Cargo Tauri for info
-        run: cargo install tauri-cli --version "=2.0.0-beta.13" --locked
-
-      - name: Tauri info
-        run: cargo tauri info
-
-      - uses: oNaiPs/secrets-to-env-action@v1
-        with:
-          secrets: ${{ toJSON(secrets) }}
-
-      - name: Build Tauri App
-        uses: tauri-apps/tauri-action@v0
-        if: matrix.config.os != 'macos-latest' || matrix.config.arch != 'aarch64'
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          releaseId: ${{ needs.create-release.outputs.release_id }}
-          releaseBody: ${{ needs.create-release.outputs.release_body }}
-          tauriScript: cargo tauri
-          updaterJsonPreferNsis: true
-
-      - name: Build Tauri App (macOS aarch64)
-        uses: tauri-apps/tauri-action@v0
-        if: matrix.config.os == 'macos-latest' && matrix.config.arch == 'aarch64'
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          releaseId: ${{ needs.create-release.outputs.release_id }}
-          releaseBody: ${{ needs.create-release.outputs.release_body }}
-          args: --target aarch64-apple-darwin
-          tauriScript: cargo tauri
-          updaterJsonPreferNsis: true
-
-  build-clip-extension:
-    runs-on: ubuntu-22.04
-
-    permissions:
-      contents: write
-      packages: write
-
-    needs: create-release
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Get version
-        id: get_version
-        uses: battila7/get-version-action@v2
-
-      - name: Build PopClip extension
-        run: make build-popclip-extension
-
-      - name: Upload PopClip extension to release
-        uses: actions/upload-release-asset@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          upload_url: ${{ needs.create-release.outputs.release_upload_url }}
-          asset_path: dist/openai-translator.popclipextz
-          asset_name: openai-translator.popclipextz
-          asset_content_type: application/zip
-
-      - name: Build SnipDo extension
-        run: make build-snipdo-extension
-
-      - name: Upload SnipDo extension to release
-        uses: actions/upload-release-asset@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          upload_url: ${{ needs.create-release.outputs.release_upload_url }}
-          asset_path: dist/openai-translator.pbar
-          asset_name: openai-translator.pbar
-          asset_content_type: application/zip
-
-  build-browser-extension:
-    runs-on: ubuntu-22.04
-
-    permissions:
-      contents: write
-      packages: write
-
-    needs: create-release
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: pnpm/action-setup@v2
-        with:
-          version: 8.6.0
-
-      - name: setup node
-        uses: actions/setup-node@v3
-        with:
-          node-version: 18
-          cache: 'pnpm'
-
-      - name: Get version
-        id: get_version
-        uses: battila7/get-version-action@v2
-
-      - name: Install dependencies
-        run: pnpm install --no-frozen-lockfile
-
-      - name: Build browser extension
-        run: make build-browser-extension
-        env:
-          VERSION: "${{ steps.get_version.outputs.version-without-v }}"
-
-      - name: Build userscript
-        run: make build-userscript
-        env:
-          VERSION: "${{ steps.get_version.outputs.version-without-v }}"
-
-      - name: Package plugin and create userscript
-        run: |
-          mkdir release
-          mv dist/browser-extension/*.zip release/
-          mv dist/openai-translator.user.js release/openai-translator-${{ steps.get_version.outputs.version-without-v }}.user.js
-
-      - name: Upload Chromium extensions to release
-        id: upload-chromium-release-asset
-        uses: actions/upload-release-asset@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          upload_url: ${{ needs.create-release.outputs.release_upload_url }}
-          asset_path: release/chromium.zip
-          asset_name: openai-translator-chromium-extension-${{ steps.get_version.outputs.version-without-v }}.zip
-          asset_content_type: application/zip
-
-      - name: Upload Firefox extensions to release
-        id: upload-firefox-release-asset
-        uses: actions/upload-release-asset@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          upload_url: ${{ needs.create-release.outputs.release_upload_url }}
-          asset_path: release/firefox.zip
-          asset_name: openai-translator-firefox-extension-${{ steps.get_version.outputs.version-without-v }}.xpi
-          asset_content_type: application/zip
-
-      - name: Upload userscript to release
-        id: upload-userscript-asset
-        uses: actions/upload-release-asset@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          upload_url: ${{ needs.create-release.outputs.release_upload_url }}
-          asset_path: release/openai-translator-${{ steps.get_version.outputs.version-without-v }}.user.js
-          asset_name: openai-translator-${{ steps.get_version.outputs.version-without-v }}.user.js
-          asset_content_type: application/javascript
-
-  publish-release:
+          name: total-energy-consumption
+          path: total_energy_consumption.json
+  create-release:
+    outputs:
+      release_body: ${{ steps.tag.outputs.message }}
+      release_id: ${{ steps.create-release.outputs.id }}
+      release_upload_url: ${{ steps.create-release.outputs.upload_url }}
     permissions:
       contents: write
     runs-on: ubuntu-20.04
-    needs: [create-release, build-tauri, build-clip-extension, build-browser-extension]
-
     steps:
-      - name: publish release
-        id: publish-release
-        uses: actions/github-script@v6
-        env:
-          release_id: ${{ needs.create-release.outputs.release_id }}
+      - name: Start Energy Measurement
+        uses: green-coding-solutions/eco-ci-energy-estimation@862050e4f01f65b1436e5eca18ba4bd85562f0de
         with:
-          script: |
-            github.rest.repos.updateRelease({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              release_id: process.env.release_id,
-              draft: false,
-              prerelease: false
-            })
+          json-output: true
+          task: start-measurement
+      - uses: actions/checkout@v4
+      - id: get_version
+        name: Get version
+        uses: battila7/get-version-action@v2
+      - id: tag
+        name: Get tag message
+        run: 'git fetch --depth=1 origin +refs/tags/*:refs/tags/*
+
+          echo "message<<EOF" >> $GITHUB_OUTPUT
+
+          echo "$(git tag -l --format=''%(contents)'' ${{ steps.get_version.outputs.version
+          }})" >> $GITHUB_OUTPUT
+
+          echo "EOF" >> $GITHUB_OUTPUT
+
+          '
+      - id: measurement-4
+        name: Record Measurement After Get tag message
+        uses: green-coding-solutions/eco-ci-energy-estimation@862050e4f01f65b1436e5eca18ba4bd85562f0de
+        with:
+          json-output: true
+          label: Get tag message
+          task: get-measurement
+      - id: create-release
+        name: Create Release
+        uses: ncipollo/release-action@v1
+        with:
+          body: ${{ steps.tag.outputs.message }}
+          draft: true
+          name: ${{ steps.get_version.outputs.version }}
+          tag: ${{ steps.get_version.outputs.version }}
+      - id: display-measurement
+        name: Display Energy Results
+        uses: green-coding-solutions/eco-ci-energy-estimation@862050e4f01f65b1436e5eca18ba4bd85562f0de
+        with:
+          json-output: true
+          task: display-results
+      - name: Save Total Energy Consumption Data
+        run: echo '${{ steps.final-measurement.outputs.data-total-json }}' > total_energy_consumption.json
+      - name: Upload Energy Consumption Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: total-energy-consumption
+          path: total_energy_consumption.json
+  publish-release:
+    needs:
+      - create-release
+      - build-tauri
+      - build-clip-extension
+      - build-browser-extension
+    permissions:
+      contents: write
+    runs-on: ubuntu-20.04
+    steps:
+      - name: Start Energy Measurement
+        uses: green-coding-solutions/eco-ci-energy-estimation@862050e4f01f65b1436e5eca18ba4bd85562f0de
+        with:
+          json-output: true
+          task: start-measurement
+      - env:
+          release_id: ${{ needs.create-release.outputs.release_id }}
+        id: publish-release
+        name: publish release
+        uses: actions/github-script@v6
+        with:
+          script: "github.rest.repos.updateRelease({\n  owner: context.repo.owner,\n\
+            \  repo: context.repo.repo,\n  release_id: process.env.release_id,\n \
+            \ draft: false,\n  prerelease: false\n})\n"
+      - id: display-measurement
+        name: Display Energy Results
+        uses: green-coding-solutions/eco-ci-energy-estimation@862050e4f01f65b1436e5eca18ba4bd85562f0de
+        with:
+          json-output: true
+          task: display-results
+      - name: Save Total Energy Consumption Data
+        run: echo '${{ steps.final-measurement.outputs.data-total-json }}' > total_energy_consumption.json
+      - name: Upload Energy Consumption Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: total-energy-consumption
+          path: total_energy_consumption.json
